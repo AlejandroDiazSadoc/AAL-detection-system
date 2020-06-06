@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:smtps="http://www.mulesoft.org/schema/mule/smtps" xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:apachekafka="http://www.mulesoft.org/schema/mule/apachekafka" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:quartz="http://www.mulesoft.org/schema/mule/quartz"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/quartz http://www.mulesoft.org/schema/mule/quartz/current/mule-quartz.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/apachekafka http://www.mulesoft.org/schema/mule/apachekafka/current/mule-apachekafka.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd
+http://www.mulesoft.org/schema/mule/smtps http://www.mulesoft.org/schema/mule/smtps/current/mule-smtps.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd">
+	<http:request-config name="HTTP_Request_Configuration" host="api.thingspeak.com" port="80" doc:name="HTTP Request Configuration"/>
+	<vm:endpoint exchange-pattern="one-way" path="ComplexEventConsumerPath" name="ComplexEventConsumerGlobalVM" doc:name="VM"/>
+	
+		<spring:beans>
+		<spring:bean class="voice.VoiceSystem" name="VoiceSystem"></spring:bean>
+		</spring:beans>
+	<http:request-config name="HTTP_Request_Configuration1" host="localhost" port="8080" doc:name="HTTP Request Configuration"/>
+	<http:request-config name="tokenConfig" protocol="HTTPS" host="dev-ceqiayp2.eu.auth0.com" port="443" doc:name="HTTP Request Configuration"/>
+	<apachekafka:config name="Apache_Kafka__Configuration" bootstrapServers="localhost:9094" consumerPropertiesFile="C:\kafka\kafkaFinal\consumer.properties" producerPropertiesFile="C:\kafka\kafkaFinal\producer.properties" doc:name="Apache Kafka: Configuration"/>
+	<flow name="tokenAPI">
+		<quartz:inbound-endpoint jobName="GetApi" repeatInterval="86340000" responseTimeout="10000" doc:name="Quartz">
+			<quartz:event-generator-job/>
+		</quartz:inbound-endpoint>
+		<set-payload value="${cadenaToken}" doc:name="Set Payload"/>
+		<logger message="LA CADENA ES: #[payload]" level="INFO" doc:name="Logger"/>
+		<http:request config-ref="tokenConfig" path="/oauth/token" method="POST" doc:name="HTTP">
+			<http:request-builder>
+				<http:header headerName="content-type" value="application/json"/>
+			</http:request-builder>
+		</http:request>
+		<custom-transformer mimeType="application/csv" class="transformer.TokenTransformer" doc:name="Java"/>
+		<scripting:component doc:name="Groovy">
+			<scripting:script engine="Groovy"><![CDATA[muleContext.getRegistry().registerObject("token", new String(payload["TokenPayload"]["type"] +" "+payload["TokenPayload"]["access_token"]))]]></scripting:script>
+		</scripting:component>
+		<logger message="El tokencito es #[app.registry.get('token')]" level="INFO" doc:name="Logger"/>
+	</flow>
+ <flow name="Generaci&#243;nEventos">
+		<apachekafka:consumer config-ref="Apache_Kafka__Configuration" topic="test" partitions="1" doc:name="Apache Kafka"/>
+		<logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <custom-transformer class="transformer.AALtransformer" doc:name="AALevents"/>
+		<component doc:name="Send Event to Esper">
+			<singleton-object class="esper.SendEventToEsperComponent"/>
+		</component>
+    </flow>
+	<flow name="Acciones">
+		<vm:inbound-endpoint exchange-pattern="one-way" ref="ComplexEventConsumerGlobalVM" doc:name="Complex Event Consumer"/>
+		<set-variable variableName="EventPatternName" value="#[message.inboundProperties['eventPatternName']]" doc:name="EventPatternName"/>
+		<logger message="#[flowVars.EventPatternName]" level="INFO" doc:name="Logger"/>
+		<choice doc:name="Choice">
+			<when expression="#[flowVars.EventPatternName.equals(&quot;PersonaNoHaDormido&quot;)]">
+				<set-payload doc:name="Mail Persona sin dormir" value="Se acaba de detectar que la persona no ha dormido"/>
+				<smtps:outbound-endpoint host="smtp.gmail.com" port="465" user="pruebaanypoint@gmail.com" password="Anypoint12345" to="pruebaanypoint@gmail.com" from="pruebaanypoint@gmail.com" subject="Alerta!! Persona no ha dormido!" responseTimeout="10000" doc:name="SMTP"/>
+				<http:request config-ref="HTTP_Request_Configuration1" path="/PersonaNoDuerme" method="GET" doc:name="HTTP">
+					<http:request-builder>
+						<http:header headerName="Authorization" value="#[app.registry.get('token')]"/>
+					</http:request-builder>
+				</http:request>
+			</when>
+			<when expression="#[flowVars.EventPatternName.equals(&quot;PersonaNoHaComido&quot;)]">
+				<set-payload value="Se acaba de detectar que la persona no ha comido." doc:name="Mail Persona sin comer"/>
+				<smtps:outbound-endpoint host="smtp.gmail.com" port="465" user="pruebaanypoint@gmail.com" password="Anypoint12345" to="pruebaanypoint@gmail.com" from="pruebaanypoint@gmail.com" subject="Alerta!! Persona no ha comido!" responseTimeout="10000" doc:name="SMTP"/>
+				<http:request config-ref="HTTP_Request_Configuration1" path="/PersonaNoCome" method="GET" doc:name="HTTP">
+					<http:request-builder>
+						<http:header headerName="Authorization" value="#[app.registry.get('token')]"/>
+					</http:request-builder>
+				</http:request>
+			</when>
+			<when expression="#[flowVars.EventPatternName.equals(&quot;PersonaNoBano&quot;)]">
+				<set-payload value="La persona lleva bastantes horas sin ir al ba&#241;o." doc:name="Mail Persona no Bano"/>
+				<smtps:outbound-endpoint host="smtp.gmail.com" port="465" user="pruebaanypoint@gmail.com" password="Anypoint12345" to="pruebaanypoint@gmail.com" from="pruebaanypoint@gmail.com" subject="Alerta!! Persona sin ir al ba&#241;o!!" responseTimeout="10000" doc:name="SMTP"/>
+				<http:request config-ref="HTTP_Request_Configuration1" path="/PersonaNoBano" method="GET" doc:name="HTTP">
+					<http:request-builder>
+						<http:header headerName="Authorization" value="#[app.registry.get('token')]"/>
+					</http:request-builder>
+				</http:request>
+			</when>
+			<when expression="#[flowVars.EventPatternName.equals(&quot;PersonaCaida&quot;)]">
+				<set-payload value="La persona se ha caido!!" doc:name="CaidaPersona"/>
+				<smtps:outbound-endpoint host="smtp.gmail.com" port="465" user="pruebaanypoint@gmail.com" password="Anypoint12345" to="pruebaanypoint@gmail.com" from="pruebaanypoint@gmail.com" subject="Alerta!! La persona se ha caido!" responseTimeout="10000" doc:name="SMTP"/>
+				<logger message="#[sessionVars.Token]" level="INFO" doc:name="Logger"/>
+				<http:request config-ref="HTTP_Request_Configuration1" path="/PersonaCaida" method="GET" doc:name="HTTP">
+					<http:request-builder>
+						<http:header headerName="Authorization" value="#[app.registry.get('token')]"/>
+					</http:request-builder>
+				</http:request>
+				<invoke object-ref="VoiceSystem" method="openUrl" doc:name="VoiceSystem"/>
+			</when>
+			<otherwise>
+				<logger message="#[payload]" level="INFO" doc:name="Logger"/>
+			</otherwise>
+		</choice>
+	</flow>
+
+
+<flow name="InsertarEventosComplejos">
+        <file:inbound-endpoint path="C:\Users\Alejandro\Desktop\Master Seguridad\TFMF\Patrones\newEventPattern" moveToDirectory="C:\Users\Alejandro\Desktop\Master Seguridad\TFMF\Patrones\deployedEventPattern" pollingFrequency="2000" fileAge="1000" responseTimeout="10000" doc:name="New Event Pattern">
+            <file:filename-regex-filter pattern=".+\.epl" caseSensitive="true"/>
+        </file:inbound-endpoint>
+        <file:file-to-string-transformer doc:name="File to String"/>
+        <component doc:name="Add EventPattern to Esper Engine">
+			<singleton-object class="esper.AddEventPatternToEsperComponent"/>
+        </component>
+        <choice-exception-strategy doc:name="Choice Exception Strategy">
+            <catch-exception-strategy when="exception.causeMatches('com.espertech.esper.*')" doc:name="Catch Exception Strategy">
+                <file:outbound-endpoint path="C:\Users\Alejandro\Desktop\Master Seguridad\TFMF\Patrones\incorrectEventPattern" responseTimeout="10000" doc:name="Incorrent Event Pattern"/>
+            </catch-exception-strategy>
+        </choice-exception-strategy>
+    </flow>
+
+ <flow name="InsertarEstructuraEventoSimple">
+		<file:inbound-endpoint path="C:\Users\Alejandro\Desktop\Master Seguridad\TFMF\Schema\newSchema" moveToDirectory="C:\Users\Alejandro\Desktop\Master Seguridad\TFMF\Schema\deployedSchema" responseTimeout="10000" doc:name="File">
+			<file:filename-regex-filter pattern=".+\.schema" caseSensitive="true"/>
+		</file:inbound-endpoint>
+		<file:file-to-string-transformer doc:name="File to String"/>
+		<component doc:name="Java">
+			<singleton-object class="esper.MyEsperClass"/>
+		</component>
+		<choice-exception-strategy doc:name="Choice Exception Strategy">
+			<catch-exception-strategy doc:name="Catch Exception Strategy">
+				<file:outbound-endpoint path="C:\Users\Alejandro\Desktop\Master Seguridad\TFMF\Schema\incorrectSchema" responseTimeout="10000" doc:name="File"/>
+			</catch-exception-strategy>
+		</choice-exception-strategy>
+	</flow>
+
+
+</mule>
+

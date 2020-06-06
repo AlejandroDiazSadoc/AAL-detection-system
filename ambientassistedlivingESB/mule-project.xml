@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<mule-project xmlns="http://www.mulesoft.com/tooling/project" runtimeId="org.mule.tooling.server.3.9.4.ee" schemaVersion="5.3.0.0">
+    <name>ambientassistedliving</name>
+    <description></description>
+    <muleExtension name="Apache Kafka" qualifier="org.mule.tooling.ui.contribution.apachekafka.3.7.0"/>
+</mule-project>
