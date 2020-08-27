@@ -1,0 +1,22 @@
+Works with Tensorflow GPU v1.15.
+
+To execute the project you have to:
+
+-Extract AmbientAssistedLiving_App.zip and import the project into Android Studio, and install the apk in the mobile and run it.
+
+-Extract Simulator.zip and import it into Unity3D to be able to record new videos from the simulator.
+
+-Extract Kafka.zip in a folder called kafka, in the Local Disk (C:), and then run the script runKafka.bat from the kafkafinal folder.
+
+-Extract APIREST.zip and chatbot.zip and execute both in separate command line terminals.
+
+-Extract AmbientAssistedLiving_ESB.zip and import the project into Anypoint Studio and run it as Mule Application.
+Modify the paths corresponding to the flows that get the CEP files.
+
+-Extract CEP.zip and indicate the path where they have been extracted in the corresponding flows of Anypoint Studio. 
+Once the ESB is deployed, move the schema from the deployedSchema folder to the newSchema folder and for the patterns also 
+move the file found in deployedEventPattern to newEventPattern.
+
+-Finally, follow the documentation installation manual regarding tensorflow, extract SoftwareDeteccion.zip 
+and run the softwareDeteccion.py file.
+
